@@ -1,16 +1,14 @@
 """Producer: certified covering of [f_{2,9} >= b] by delta<0 boxes.
 
-Proves that very theta in the reduced domain with f_2(d;theta) >= b
-satisfies delta(theta) = f_{2,9}^K(theta) - f_{2,9}^tree(theta) < 0,
-by a two-verdict interval branch and bound:
+Proves that very theta with f_{2,9}^tree(theta) >= b satisfies
+delta(theta) = f_{2,9}^K(theta) - f_{2,9}^tree(theta) < 0 via interval branch and bound:
 
-  P n  natural ball evaluation:                 sup f_{2,9^tree(B) < b
+  P n  natural ball evaluation:                 sup f_{2,9}^tree(B) < b
   P c  centred form (midpoint + AD gradient):   sup f_{2,9}^tree(B) < b
   S    centred form on delta:                   sup delta(B) < 0
 
 Boxes achieving no verdict are bisected at the exact float midpoint of one
-coordinate, so the leaves tile the domain EXACTLY (children share the computed
-midpoint; no midpoint/radius rounding gaps).
+coordinate, so the leaves tile the domain EXACTLY.
 
 Certificate: gzipped text, one JSON header line, then a preorder serialization
 of the box tree, one node per line:
@@ -18,7 +16,7 @@ of the box tree, one node per line:
                      follows, then high child subtree
   P n | P c          prune leaf (verdict re-derivable by a checker)
   S <hex>            safe leaf; <hex> = certified upper bound on delta there
-All angle constants in the header are exact binary64 hex (E3/E7 traps).
+All angle constants in the header are exact binary64 hex.
 
 Rigour: pure arb ops at fixed precision; sup/inf extracted via f2_ub.fup/flo
 (outward-rounded); enclosing balls for [lo,hi] use radius nextafter'd outward.
@@ -50,8 +48,7 @@ class _Const(TypedDict):
 
 
 # certified lower bounds on f_2^tree(d) and witness points (arb point
-# enclosures, radius ~8.7e-77); re-certified at run time by verify_b, so
-# nothing here is trusted (README.md §2)
+# enclosures, radius ~8.7e-77); re-certified at run time by verify_b
 CONSTANTS: dict[int, _Const] = {
     9: {
         "b": float.fromhex("0x1.473bb99c3c5eap-1"),   # 0.6391275408952286
@@ -62,7 +59,7 @@ CONSTANTS: dict[int, _Const] = {
 
 
 def verify_b(d, b, witness_hex):
-    """Certify b <= f_2(d; witness) (hence b <= f_2^tree(d))."""
+    """Certify b <= f_{2,9}^tree(witness)."""
     M._set_prec(256)
     x = [acb(arb(float.fromhex(h))) for h in witness_hex]
     v = M.f2_acb(d - 1, x)
@@ -74,8 +71,7 @@ def verify_b(d, b, witness_hex):
 def _ball(lo, hi):
     """(m, r) floats with [m-r, m+r] >= [lo, hi], containment PROVEN exactly.
 
-    The containment check is done in exact rational arithmetic (binary64 is a
-    subset of Q), so it cannot false-alarm or false-pass at any depth.
+    The containment check is done in exact rational arithmetic.
     """
     from fractions import Fraction as F
     m = 0.5 * (lo + hi)
@@ -149,10 +145,8 @@ def cover(d, b, out_path, max_seconds=36000.0,
                     for gi in g]
             n["evals"] += 1
             fc = M.f2_acb(E, [acb(arb(m)) for m, _ in mr])
-            # mean-value form; the radius term g_i * [-r_i, r_i] is formed IN
-            # arb, never as a float product (float rounds to nearest and can
-            # shave the radius inward — referee defect E-G1). contrib stays
-            # float: it only steers the split heuristic, which needs no rigour.
+            # mean-value form; radius term g_i * [-r_i, r_i] is formed in
+            # arb; contrib stays float: only steers the split heuristic.
             bound = fc
             contrib = [gmag[i] * mr[i][1] for i in range(4)]
             for i in range(4):
@@ -170,9 +164,8 @@ def cover(d, b, out_path, max_seconds=36000.0,
                 _, gd = kdd_ball.ce_dual(
                     d, [M.Dual.var(arb(m, r), i)
                         for i, (m, r) in enumerate(mr)], PREC)
-                # gradient of delta = ce - f2 as an arb enclosure difference;
-                # radius term in ball arithmetic (E-G1), and tighter than the
-                # |ce'|+|f2'| triangle bound.
+                # gradient of delta = f_{2,9}^K - f_{2,9}^tree as an arb
+                # enclosure difference; radius term in ball arithmetic
                 dbound = ce_c - fc
                 for i in range(4):
                     dbound = dbound + (gd[i] - g[i]) * arb(0.0, mr[i][1])
@@ -234,10 +227,6 @@ def main():
     res = cover(d, b, out, max_seconds=36000.0)
     res["mode"] = mode
     res["b_hex"] = float.hex(b)
-    # The S-leaf boxes are deliberately NOT part of the run record: they are
-    # reconstructed by replaying the bisection tree, so storing them would ship
-    # a coordinate a checker could be tempted to trust.  Keep the dumped record
-    # to counts and constants (README section 4).
     res.pop("safe_boxes", None)
     res["safe_boxes_note"] = (
         "not stored: S-leaf boxes are reconstructed by replaying the bisection "

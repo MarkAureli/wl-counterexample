@@ -125,9 +125,9 @@ def acb_sin_cos(x):
 # Marwaha's closed form, generic over acb and Dual
 # --------------------------------------------------------------------------
 #
-#   f_2 = 1/2 + c^2 r t y^E z - (c s/2) alpha - (s^2 t z/4) kappa
-#   c = cos 2b2, m = cos g2, r = cos 2b1, y = cos g1
-#   s = sin 2b2, n = sin g2, t = sin 2b1, z = sin g1,   E = d-1
+#   f_{2,9}^tree = 1/2 + c^2 r t y^E z - (c s/2) alpha - (s^2 t z/4) kappa
+#   c = cos(2 beta2), m = cos(gamma2), r = cos(2 beta1), y = cos(gamma1)
+#   s = sin(2 beta2), n = sin(gamma2), t = sin(2 beta1), z = sin(gamma1),   E = d-1
 #   A = (m y - n r z)^E,  B = (m y + n r z)^E
 #   P = (m + i n t y^E z)^E,  Q = (m - i n t y^E z)^E
 #   kappa = ((1+r) A - (1-r) B) (P + Q)
@@ -196,7 +196,7 @@ def _set_prec(prec):
 
 def domain():
     """Reduced fundamental domain."""
-    pi = math.nextafter(math.pi, math.inf)          # > pi
-    qpi = math.nextafter(math.pi / 4, math.inf)     # > pi/4
+    pi = math.nextafter(math.pi, math.inf)
+    qpi = math.nextafter(math.pi / 4, math.inf)
     return [(-qpi, qpi), (0.0, pi), (-qpi, qpi), (-pi, pi)]
 
