@@ -1,8 +1,8 @@
-"""Second-engine checker for the global-optimality certificate (mpmath.iv only).
+"""Independent checker for the global-optimality certificate (mpmath.iv only).
 
 This is a deliberately independent re-implementation of the verifier for the
 certificates written by `certify_global_p2.py`.  It shares NO code with the
-producer and none with the FLINT/arb checker `check_global_p2_d9.py`:
+producer:
 
   * arithmetic is mpmath's inf-sup interval type (`mpmath.iv`), not arb balls;
   * both scalar engines are transcribed here from their defining formulas
@@ -16,7 +16,7 @@ The certificate is gzipped text: line 1 a JSON header, then a preorder walk of
 the box tree, one record per line:
 
     N <k>        internal node, split coordinate k, low subtree then high
-    P n | P c    prune leaf: sup f_2(box) < L
+    P n | P c    prune leaf: sup f_2(box) < b
     S <hex>      safe leaf: sup [<C_e> - f_2](box) < 0
 
 The file names split coordinates ONLY, so every box is reconstructed here from
@@ -34,22 +34,22 @@ in the file to trust.  Checks performed:
      m = 0.5*(lo+hi), r = nextafter(max(m-lo, hi-m), +inf) is checked to
      contain [lo,hi] in EXACT rational arithmetic (fractions.Fraction);
      binary64 is a subset of Q so this cannot false-pass at any depth.
-  4. P leaves: sup f_2(ball) < L by natural interval evaluation; if that fails
+  4. P leaves: sup f_2(ball) < b by natural interval evaluation; if that fails
      (interval dependency is expression-shaped, so the arb and iv natural
      bounds differ slightly) the first-order centred form
         f_2(mid) + sum_i sup|d f_2/d x_i|(ball) * r_i
      is used, with the gradient enclosure from forward-mode dual numbers over
-     iv.mpc.  One of the two must be < L.
+     iv.mpc.  One of the two must be < b.
   5. S leaves: centred form on delta = <C_e> - f_2,
         delta(mid) + sum_i (sup|d C_e/d x_i| + sup|d f_2/d x_i|) * r_i  <  0,
      and c = -max_S sup delta is RECOMPUTED here, never read from the file.
-  6. witness: L <= inf f_2(d; witness) at iv.dps >= 40.
+  6. witness: b <= inf f_2(d; witness) at iv.dps >= 40.
 
 Calibration (always run, before any replay; loud abort on mismatch)
 -------------------------------------------------------------------
   * delta = <C_e> - f_2 at the d=9 reference point must enclose
     -0.005636308471626929 to 1e-12 -- this exercises BOTH engines at once;
-  * f_2(d=9; witness) >= L = 0x1.473bb99c3c5eap-1.
+  * f_2(d=9; witness) >= b = 0x1.473bb99c3c5eap-1.
 All angles enter as float.fromhex; no decimal angle string is ever parsed into
 high precision (repo rule E3), and no angle is read from a document.
 
@@ -77,13 +77,13 @@ from mpmath import iv, mp
 # --------------------------------------------------------------------------
 
 CAL_D = 9
-CAL_POINT = ("-0x1.0b184b3c23969p-2", "0x1.56f3f3e6b7d62p+1",
-             "-0x1.04f3d6213d819p-1", "-0x1.6f1f7f524975ep+1")
+CAL_POINT = ("-0x1.04f3d6213d819p-1", "-0x1.0b184b3c23969p-2",
+             "-0x1.6f1f7f524975ep+1", "0x1.56f3f3e6b7d62p+1")
 CAL_DELTA = -0.005636308471626929
 CAL_TOL = 1e-12
-CAL_L = float.fromhex("0x1.473bb99c3c5eap-1")          # 0.6391275408952286
-CAL_WITNESS = ("-0x1.0b184cde2ef9ap-2", "0x1.56f3f40791132p+1",
-               "-0x1.04f3d4e04111ap-1", "-0x1.6f1f7f7dd666ep+1")
+CAL_B = float.fromhex("0x1.473bb99c3c5eap-1")          # 0.6391275408952286
+CAL_WITNESS = ("-0x1.04f3d4e04111ap-1", "-0x1.0b184cde2ef9ap-2",
+               "-0x1.6f1f7f7dd666ep+1", "0x1.56f3f40791132p+1")
 
 
 # --------------------------------------------------------------------------
@@ -114,7 +114,7 @@ def _sym(t):
 # complex interval scalars with optional forward-mode gradient
 #
 # One class serves both roles: g is None for a plain value, or a 4-tuple of
-# partial derivatives w.r.t. (g1, g2, b1, b2).  Keeping them in one class means
+# partial derivatives w.r.t. (b1, g1, b2, g2).  Keeping them in one class means
 # the two scalar formulas below are written exactly once, so the value path and
 # the derivative path cannot silently drift apart.
 # --------------------------------------------------------------------------
@@ -275,7 +275,7 @@ def _re(z):
 #   f_2  = 1/2 + c^2 r t yE z - (c s / 2) alpha - (s^2 t z / 4) kappa
 # --------------------------------------------------------------------------
 
-def f2_form(E, g1, g2, b1, b2, I):
+def f2_form(E, b1, g1, b2, g2, I):
     c = (2 * b2).cos()
     s = (2 * b2).sin()
     r = (2 * b1).cos()
@@ -301,7 +301,7 @@ def f2_form(E, g1, g2, b1, b2, I):
 
 
 def f2_value(E, x, I):
-    """x: 4 IVC (no gradient) in order (g1,g2,b1,b2).  Returns iv.mpf."""
+    """x: 4 IVC (no gradient) in order (b1,g1,b2,g2).  Returns iv.mpf."""
     return _re(f2_form(E, x[0], x[1], x[2], x[3], I).v)
 
 
@@ -341,7 +341,7 @@ def _mixer(d, cb, sb, I):
     return Mx
 
 
-def ce_form(d, g1, g2, b1, b2, I):
+def ce_form(d, b1, g1, b2, g2, I):
     """Returns (psi as (d+1)x(d+1) IVC, Cm integer table)."""
     D = d + 1
     sq = [iv.sqrt(iv.mpf([comb(d, a), comb(d, a)])) for a in range(D)]
@@ -421,25 +421,23 @@ def ball_ivc(m, r, grad_index=None):
     return IVC.var(z, grad_index) if grad_index is not None else IVC.const(z)
 
 
-def expected_domain(d):
-    """Reduced fundamental domain with every endpoint pushed outward one ulp."""
+def expected_domain():
+    """Reduced fundamental domain for d = 9, order (b1,g1,b2,g2), every endpoint
+    pushed outward one ulp."""
     pi = math.nextafter(math.pi, math.inf)
-    hpi = math.nextafter(math.pi / 2, math.inf)
     qpi = math.nextafter(math.pi / 4, math.inf)
-    if d % 2 == 0:
-        return [(0.0, hpi), (-hpi, hpi), (-qpi, qpi), (-qpi, qpi)]
-    return [(0.0, pi), (-pi, pi), (-qpi, qpi), (-qpi, qpi)]
+    return [(-qpi, qpi), (0.0, pi), (-qpi, qpi), (-pi, pi)]
 
 
 # --------------------------------------------------------------------------
 # leaf tests
 # --------------------------------------------------------------------------
 
-def check_prune(E, mr, L, I):
-    """sup f_2(box) < L, naturally if possible, else by the centred form."""
+def check_prune(E, mr, b, I):
+    """sup f_2(box) < b, naturally if possible, else by the centred form."""
     ball = [ball_ivc(m, r) for m, r in mr]
     nat = sup(f2_value(E, ball, I))
-    if nat < L:
+    if nat < b:
         return True, "n", nat
     dual = [ball_ivc(m, r, i) for i, (m, r) in enumerate(mr)]
     _, g = f2_value_grad(E, dual, I)
@@ -448,7 +446,7 @@ def check_prune(E, mr, L, I):
     for i in range(4):
         bound = bound + _sym(math.nextafter(mag(g[i]) * mr[i][1], math.inf))
     ctr = sup(bound)
-    return ctr < L, "c", ctr
+    return ctr < b, "c", ctr
 
 
 def check_safe(d, E, mr, I):
@@ -495,9 +493,9 @@ def calibrate(dps=40):
     fw = f2_value(E, wit, I)
     lo = inf(fw)
     print(f"calibration 2 (witness): f_2 = [{lo!r}, {sup(fw)!r}]")
-    print(f"  L = {CAL_L!r}; margin f_2 - L = {lo - CAL_L:.6e}")
-    if lo < CAL_L:
-        raise SystemExit(f"CALIBRATION 2 FAILED: {lo!r} < L = {CAL_L!r}")
+    print(f"  b = {CAL_B!r}; margin f_2 - b = {lo - CAL_B:.6e}")
+    if lo < CAL_B:
+        raise SystemExit(f"CALIBRATION 2 FAILED: {lo!r} < b = {CAL_B!r}")
     print("calibration OK\n")
     return dlo, dhi, lo
 
@@ -535,18 +533,18 @@ def check(path, sample=None, dps=25, wit_dps=40):
     header = json.loads(fh.readline())
     if header.get("kind") != "wl-global-p2-cover" or header.get("p") != 2:
         raise SystemExit(f"bad header kind/p: {header.get('kind')!r}")
-    if header.get("order") != "g1,g2,b1,b2":
+    if header.get("order") != "b1,g1,b2,g2":
         raise SystemExit(f"unexpected variable order {header.get('order')!r}")
     if header.get("d") != D:
         raise SystemExit(f"expected d={D}, header has d={header.get('d')!r}")
     d = D
     E = d - 1
-    L = float.fromhex(header["L_hex"])
-    dom = [(float.fromhex(a), float.fromhex(b))
-           for a, b in header["domain_hex"]]
-    if dom != [tuple(t) for t in expected_domain(d)]:
+    b = float.fromhex(header["b_hex"])
+    dom = [(float.fromhex(x), float.fromhex(y))
+           for x, y in header["domain_hex"]]
+    if dom != [tuple(t) for t in expected_domain()]:
         raise SystemExit("header domain is not the reduced fundamental domain")
-    print(f"header: d={d}  L={L!r}  domain OK (reduced fundamental domain)")
+    print(f"header: d={d}  b={b!r}  domain OK (reduced fundamental domain)")
 
     set_dps(wit_dps)
     I = iv.mpc(iv.mpf([0, 0]), iv.mpf([1, 1]))
@@ -557,15 +555,15 @@ def check(path, sample=None, dps=25, wit_dps=40):
            for h in wh]
     fw = f2_value(E, wit, I)
     lo = inf(fw)
-    if lo < L:
-        raise SystemExit(f"witness check failed: f_2 >= {lo!r} < L={L!r}")
+    if lo < b:
+        raise SystemExit(f"witness check failed: f_2 >= {lo!r} < b={b!r}")
     # E-G12: report the margin from the interval endpoint at working
-    # precision; the outward-rounded binary64 endpoint prints 0 when L is
+    # precision; the outward-rounded binary64 endpoint prints 0 when b is
     # exactly that endpoint, misreading as "certified only up to equality".
     mp.dps = wit_dps + 10
-    marg = mp.mpf(fw.a) - mp.mpf(L)
-    print(f"witness: L = {L!r} <= f_2(witness) >= {lo!r} "
-          f"(interval lower endpoint - L = {mp.nstr(marg, 6)}, "
+    marg = mp.mpf(fw.a) - mp.mpf(b)
+    print(f"witness: b = {b!r} <= f_2(witness) >= {lo!r} "
+          f"(interval lower endpoint - b = {mp.nstr(marg, 6)}, "
           f"iv.dps={wit_dps})")
 
     set_dps(dps)
@@ -612,16 +610,16 @@ def check(path, sample=None, dps=25, wit_dps=40):
             p_index += 1
             if sel is not None and i not in sel:
                 continue
-            mr = [enclosing_ball(a, b) for a, b in box]
-            ok, how, val = check_prune(E, mr, L, I)
+            mr = [enclosing_ball(x, y) for x, y in box]
+            ok, how, val = check_prune(E, mr, b, I)
             if not ok:
                 raise SystemExit(f"line {nline}: P leaf FAILS, sup f_2 "
-                                 f"<= {val!r} not < L={L!r}, box={box}")
+                                 f"<= {val!r} not < b={b!r}, box={box}")
             checked["P"] += 1
             modes[how] += 1
         elif head == "S":
             counts["S"] += 1
-            mr = [enclosing_ball(a, b) for a, b in box]
+            mr = [enclosing_ball(x, y) for x, y in box]
             ok, s = check_safe(d, E, mr, I)
             if not ok:
                 raise SystemExit(f"line {nline}: S leaf FAILS, sup delta "
@@ -649,11 +647,11 @@ def check(path, sample=None, dps=25, wit_dps=40):
         print(f"\n  c = {c!r}   (= -max certified sup delta over S leaves, "
               "recomputed here)")
         print(f"THEOREM (mpmath.iv engine): every theta with "
-              f"f_2({d};theta) >= {L!r} satisfies")
+              f"f_2({d};theta) >= {b!r} satisfies")
         print(f"  <C_e>(K_{d},{d};theta) - f_2({d};theta) <= {worst_safe!r} "
               f"< 0;  violation at least {c:.6e}.")
     else:
-        print("\n  no S leaves: {f_2 >= L} is empty on the domain")
+        print("\n  no S leaves: {f_2 >= b} is empty on the domain")
     return True
 
 

@@ -1,29 +1,19 @@
 """Ball-input K_{d,d} per-edge engine, value and gradient, for wide boxes.
 
-  ce_ball(d, g1, g2, b1, b2, prec)   -> arb enclosure of <C_e> on K_{d,d}
-  ce_dual(d, x, prec)                -> (arb value, 4 arb partials) over a box,
-                                        x = 4 f2_ub.Dual in order (g1,g2,b1,b2)
+  ce_ball(d, b1, g1, b2, g2, prec)   -> arb enclosure of f_{2,9}^K
+  ce_dual(d, x, prec)                -> (arb value, 4 arb partials) over a box
 
-The state lives in the two-sided symmetric subspace, a (d+1) x (d+1) array;
-Cm[a][b] = a(d-b) + (d-a)b is the total cut and <C_e> = <C>/d^2.  Natural ball
-evaluation of this computation amplifies input radii by ~4e3 (phases
-e^{-i g Cm} with Cm up to d^2, then two dense matrix products), so on wide
-boxes only the centred form
-    sup delta(B) <= delta(mid) + sum_i sup|d delta/d x_i (B)| * rad_i
-is usable; `ce_dual` supplies the gradient enclosure for it (forward-mode AD;
-d|z|^2 = 2 Re(conj(z) dz) at the readout).
+State lives in the (d+1)x(d+1) two-sided symmetric (Dicke) subspace;
+Cm[a][b] = a(d-b) + (d-a)b is the total cut and <C_e> = <C>/d^2. Natural ball
+evaluation amplifies input radii too much on wide boxes (phases e^{-i g Cm}
+with Cm up to d^2, then two dense matrix products), so `ce_dual` supplies a
+gradient enclosure for the centred form
+    sup delta(B) <= delta(mid) + sum_i sup|d delta/d x_i (B)| * rad_i.
 
-Variable order everywhere: (g1, g2, b1, b2).
-
-Exploits the extra partition-swap symmetry beyond the (d+1)x(d+1) Dicke
-reduction: psi[a][b] stays symmetric (psi=psi^T) throughout the evolution
-here (Cm[a][b] is symmetric and both layers apply the SAME single-partition
-mixer matrix Mx to both indices), so only the upper triangle a<=b, dimension
-D(D+1)/2 instead of D^2, needs to be stored or produced as output. The
-contraction that builds `mid` still needs the full DxD psi (both factors of
-the matrix product touch every row), so only the second contraction (`new`,
-which produces the symmetric result) and the final readout sum are actually
-halved (HANDOFF_dicke_symmetrization.md).
+psi[a][b] stays symmetric throughout (Cm and the mixer Mx are applied
+identically to both indices), so only the upper triangle a<=b is stored;
+the `mid` contraction still needs the full DxD psi, but `new` and the
+final readout sum only touch the upper triangle.
 """
 
 from math import comb
@@ -33,8 +23,8 @@ from flint import ctx, arb, acb
 import f2_ub as M  # Dual class, _set_prec
 
 
-def ce_ball(d, g1, g2, b1, b2, prec):
-    """Enclosure of <C_e> on K_{d,d} at p=2; angles are arb balls, kept wide."""
+def ce_ball(d, b1, g1, b2, g2, prec):
+    """Enclosure of f_{2,9}^K at p=2; angles are arb balls, kept wide."""
     ctx.prec = prec
     D = d + 1
     binom = [arb(comb(d, a)) for a in range(D)]
@@ -95,13 +85,13 @@ def ce_ball(d, g1, g2, b1, b2, prec):
 
 
 def ce_dual(d, x, prec):
-    """(value, gradient) of <C_e> on K_{d,d} over a box.
+    """(value, gradient) of f_{2,9}^K over a box.
 
-    x = [g1, g2, b1, b2] as f2_ub.Dual over acb balls.  Returns
+    x = [b1, g1, b2, g2] as f2_ub.Dual over acb balls.  Returns
     (arb value-enclosure, tuple of 4 arb partial-enclosures).
     """
     ctx.prec = prec
-    gammas, betas = (x[0], x[1]), (x[2], x[3])
+    gammas, betas = (x[1], x[3]), (x[0], x[2])
     D = d + 1
     I = acb(0, 1)
     binom = [arb(comb(d, a)) for a in range(D)]
@@ -172,3 +162,4 @@ def ce_dual(d, x, prec):
                     + 4 * (zv.real * dq.real + zv.imag * dq.imag) * w
     dd2 = arb(d ** 2)
     return tot_v / dd2, tuple(t / dd2 for t in tot_d)
+

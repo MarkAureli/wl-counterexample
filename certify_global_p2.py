@@ -1,18 +1,18 @@
-"""Producer: certified covering of {theta : f_2(d;theta) >= L} by delta<0 boxes.
+"""Producer: certified covering of [f_{2,9} >= b] by delta<0 boxes.
 
 Proves (counterexample/README.md):  every theta in the reduced domain
-with f_2(d;theta) >= L satisfies  delta(theta) = <C_e>(K_dd;theta) - f_2(d;theta) < 0,
+with f_2(d;theta) >= b satisfies  delta(theta) = <C_e>(K_dd;theta) - f_2(d;theta) < 0,
 by a two-verdict interval branch and bound:
 
-  P n  natural ball evaluation:                 sup f_2(B) < L
-  P c  centred form (midpoint + AD gradient):   sup f_2(B) < L
+  P n  natural ball evaluation:                 sup f_2(B) < b
+  P c  centred form (midpoint + AD gradient):   sup f_2(B) < b
   S    centred form on delta:                   sup delta(B) < 0
 
 Boxes achieving no verdict are bisected at the exact float midpoint of one
 coordinate, so the leaves tile the domain EXACTLY (children share the computed
 midpoint; no midpoint/radius rounding gaps).  There is deliberately NO
 monotonicity face-collapse: collapsing is sound for pruning but unsound as a
-covering step (interior points with f_2 >= L would escape the S test).
+covering step (interior points with f_2 >= b would escape the S test).
 
 Certificate: gzipped text, one JSON header line, then a preorder serialization
 of the box tree, one node per line:
@@ -25,7 +25,7 @@ All angle constants in the header are exact binary64 hex (E3/E7 traps).
 Rigour: pure arb ops at fixed precision; sup/inf extracted via f2_ub.fup/flo
 (outward-rounded); enclosing balls for [lo,hi] use radius nextafter'd outward.
 Run from counterexample/.  Usage:
-  python3 certify_global_p2.py run9        # the real run (d=9, real L)
+  python3 certify_global_p2.py run9        # the real run (d=9, real b)
 """
 
 import gzip
@@ -41,66 +41,72 @@ import f2_ub as M  # noqa: E402
 import kdd_ball  # noqa: E402
 
 PREC = 96
-GAP_SKIP = 0.03      # natural bound this far above L: split, skip gradient work
+GAP_SKIP = 0.03      # natural bound this far above b: split, skip gradient work
 W_SAFE = 1.5e-4      # only attempt the (15 ms) delta test below this width
 MIN_W = 1e-8         # width floor: reaching it means the theorem is in doubt
 LOG_EVERY = 250_000
 
 class _Const(TypedDict):
-    L: float
-    U: float
+    b: float
     witness: list[str]
 
 
 # certified lower bounds on f_2^tree(d) and witness points (arb point
-# enclosures, radius ~8.7e-77); re-certified at run time by verify_L, so
+# enclosures, radius ~8.7e-77); re-certified at run time by verify_b, so
 # nothing here is trusted (README.md §2)
 CONSTANTS: dict[int, _Const] = {
     9: {
-        "L": float.fromhex("0x1.473bb99c3c5eap-1"),   # 0.6391275408952286
-        "U": float.fromhex("0x1.473bb9f2229a6p-1"),   # certified upper bound
-        "witness": ["-0x1.0b184cde2ef9ap-2", "0x1.56f3f40791132p+1",
-                    "-0x1.04f3d4e04111ap-1", "-0x1.6f1f7f7dd666ep+1"],
+        "b": float.fromhex("0x1.473bb99c3c5eap-1"),   # 0.6391275408952286
+        "witness": ["-0x1.04f3d4e04111ap-1", "-0x1.0b184cde2ef9ap-2",
+                    "-0x1.6f1f7f7dd666ep+1", "0x1.56f3f40791132p+1"],
     },
 }
 
 
-def verify_L(d, L, witness_hex):
-    """Certify L <= f_2(d; witness) (hence L <= f_2^tree(d))."""
+def verify_b(d, b, witness_hex):
+    """Certify b <= f_2(d; witness) (hence b <= f_2^tree(d))."""
     M._set_prec(256)
     x = [acb(arb(float.fromhex(h))) for h in witness_hex]
     v = M.f2_acb(d - 1, x)
     lo = M.flo(v)
-    assert lo >= L, f"L verification failed: {lo} < {L}"
+    assert lo >= b, f"b verification failed: {lo} < {b}"
     return lo
 
 
 def _ball(lo, hi):
+    """(m, r) floats with [m-r, m+r] >= [lo, hi], containment PROVEN exactly.
+
+    The containment check is done in exact rational arithmetic (binary64 is a
+    subset of Q), so it cannot false-alarm or false-pass at any depth.
+    """
+    from fractions import Fraction as F
     m = 0.5 * (lo + hi)
     r = max(m - lo, hi - m)
-    r = math.nextafter(r, math.inf) if r > 0.0 else 0.0
+    if r > 0.0:
+        r = math.nextafter(r, math.inf)
+    assert F(m) - F(r) <= F(lo) and F(m) + F(r) >= F(hi), "ball containment"
     return m, r
 
 
-def cover(d, L, out_path, max_seconds=36000.0,
+def cover(d, b, out_path, max_seconds=36000.0,
           max_boxes=200_000_000) -> dict[str, object]:
     """Run the covering search; returns stats dict. Writes certificate."""
     M._set_prec(PREC)
     E = d - 1
-    dom = M.domain(d)
+    dom = M.domain()
     t0 = time.time()
     f = gzip.open(out_path, "wt")
     header = dict(kind="wl-global-p2-cover", version=1, d=d, p=2, prec=PREC,
-                  L_hex=float.hex(L), domain_hex=[[float.hex(a), float.hex(b)]
-                                                  for a, b in dom],
+                  b_hex=float.hex(b), domain_hex=[[float.hex(x), float.hex(y)]
+                                                  for x, y in dom],
                   witness_hex=(CONSTANTS[d]["witness"] if d in CONSTANTS
                                else None),
                   gap_skip=GAP_SKIP, w_safe=W_SAFE, min_w=MIN_W,
-                  order="g1,g2,b1,b2",
+                  order="b1,g1,b2,g2",
                   tree="preorder; N k -> low subtree then high subtree")
     f.write(json.dumps(header) + "\n")
 
-    stack = [tuple((a, b) for a, b in dom)]
+    stack = [tuple((x, y) for x, y in dom)]
     emitted = []          # replay buffer is the file itself; stream directly
     n = dict(boxes=0, pn=0, pc=0, safe=0, evals=0, duals=0, dduals=0)
     worst_safe = -math.inf
@@ -120,21 +126,21 @@ def cover(d, L, out_path, max_seconds=36000.0,
                   f"pn={n['pn']} pc={n['pc']} S={n['safe']} "
                   f"t={time.time()-t0:.0f}s", flush=True)
 
-        lo = [a for a, _ in box]
-        hi = [b for _, b in box]
-        mr = [_ball(a, b) for a, b in box]
-        maxw = max(b - a for a, b in box)
+        lo = [x for x, _ in box]
+        hi = [y for _, y in box]
+        mr = [_ball(x, y) for x, y in box]
+        maxw = max(y - x for x, y in box)
 
         # 1. natural prune
         n["evals"] += 1
         val = M.f2_acb(E, [acb(arb(m, r)) for m, r in mr])
-        gap = M.fup(val) - L
+        gap = M.fup(val) - b
         if gap < 0.0:
             f.write("P n\n")
             n["pn"] += 1
             continue
 
-        contrib = [b - a for a, b in box]
+        contrib = [y - x for x, y in box]
         if gap <= GAP_SKIP:
             # 2. centred prune
             n["duals"] += 1
@@ -153,7 +159,7 @@ def cover(d, L, out_path, max_seconds=36000.0,
             contrib = [gmag[i] * mr[i][1] for i in range(4)]
             for i in range(4):
                 bound = bound + g[i] * arb(0.0, mr[i][1])
-            if M.fup(bound) < L:
+            if M.fup(bound) < b:
                 f.write("P c\n")
                 n["pc"] += 1
                 continue
@@ -161,8 +167,8 @@ def cover(d, L, out_path, max_seconds=36000.0,
             # 3. safe test (only near-optimal boxes get this far)
             if maxw <= W_SAFE:
                 n["dduals"] += 1
-                g1, g2, b1, b2 = (arb(m) for m, _ in mr)
-                ce_c = kdd_ball.ce_ball(d, g1, g2, b1, b2, PREC)
+                b1, g1, b2, g2 = (arb(m) for m, _ in mr)
+                ce_c = kdd_ball.ce_ball(d, b1, g1, b2, g2, PREC)
                 _, gd = kdd_ball.ce_dual(
                     d, [M.Dual.var(arb(m, r), i)
                         for i, (m, r) in enumerate(mr)], PREC)
@@ -222,14 +228,14 @@ def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else "run9"
     if mode != "run9":
         raise SystemExit(f"unknown mode {mode}")
-    d, L = 9, CONSTANTS[9]["L"]
+    d, b = 9, CONSTANTS[9]["b"]
     out = "cert_global_p2_d9.jsonl.gz"
-    wlo = verify_L(d, L, CONSTANTS[d]["witness"])
-    print(f"L verified: {L!r} <= certified point value {wlo!r}")
-    print(f"mode={mode} d={d} L={L!r} prec={PREC}")
-    res = cover(d, L, out, max_seconds=36000.0)
+    wlo = verify_b(d, b, CONSTANTS[d]["witness"])
+    print(f"b verified: {b!r} <= certified point value {wlo!r}")
+    print(f"mode={mode} d={d} b={b!r} prec={PREC}")
+    res = cover(d, b, out, max_seconds=36000.0)
     res["mode"] = mode
-    res["L_hex"] = float.hex(L)
+    res["b_hex"] = float.hex(b)
     # The S-leaf boxes are deliberately NOT part of the run record: they are
     # reconstructed by replaying the bisection tree, so storing them would ship
     # a coordinate a checker could be tempted to trust.  Keep the dumped record
@@ -237,7 +243,7 @@ def main():
     res.pop("safe_boxes", None)
     res["safe_boxes_note"] = (
         "not stored: S-leaf boxes are reconstructed by replaying the bisection "
-        f"tree in {out}, which is what verify/check_global_p2_d9.py does.")
+        f"tree in {out}, which is what verify/check_global_p2_d9_mpiv.py does.")
     json.dump(res, open(out.replace(".jsonl.gz", "_result.json"), "w"),
               indent=1)
     print(json.dumps(res, indent=1))
@@ -245,3 +251,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
