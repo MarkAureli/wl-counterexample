@@ -1,18 +1,16 @@
 """Producer: certified covering of [f_{2,9} >= b] by delta<0 boxes.
 
-Proves (counterexample/README.md):  every theta in the reduced domain
-with f_2(d;theta) >= b satisfies  delta(theta) = <C_e>(K_dd;theta) - f_2(d;theta) < 0,
+Proves that very theta in the reduced domain with f_2(d;theta) >= b
+satisfies delta(theta) = f_{2,9}^K(theta) - f_{2,9}^tree(theta) < 0,
 by a two-verdict interval branch and bound:
 
-  P n  natural ball evaluation:                 sup f_2(B) < b
-  P c  centred form (midpoint + AD gradient):   sup f_2(B) < b
+  P n  natural ball evaluation:                 sup f_{2,9^tree(B) < b
+  P c  centred form (midpoint + AD gradient):   sup f_{2,9}^tree(B) < b
   S    centred form on delta:                   sup delta(B) < 0
 
 Boxes achieving no verdict are bisected at the exact float midpoint of one
 coordinate, so the leaves tile the domain EXACTLY (children share the computed
-midpoint; no midpoint/radius rounding gaps).  There is deliberately NO
-monotonicity face-collapse: collapsing is sound for pruning but unsound as a
-covering step (interior points with f_2 >= b would escape the S test).
+midpoint; no midpoint/radius rounding gaps).
 
 Certificate: gzipped text, one JSON header line, then a preorder serialization
 of the box tree, one node per line:
@@ -24,8 +22,8 @@ All angle constants in the header are exact binary64 hex (E3/E7 traps).
 
 Rigour: pure arb ops at fixed precision; sup/inf extracted via f2_ub.fup/flo
 (outward-rounded); enclosing balls for [lo,hi] use radius nextafter'd outward.
-Run from counterexample/.  Usage:
-  python3 certify_global_p2.py run9        # the real run (d=9, real b)
+Usage:
+  python3 certify_global_p2.py run9
 """
 
 import gzip
