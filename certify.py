@@ -1,7 +1,7 @@
-"""Producer: certified covering of [f_{2,d}^tree >= b] by delta<0 boxes.
+"""Certified covering of [f_{2,9}^tree >= b] by delta<0 boxes.
 
-Proves that very theta with f_{2,d}^tree(theta) >= b satisfies
-delta(theta) = f_{2,d}^K(theta) - f_{2,d}^tree(theta) < 0
+Proves that very theta with f_{2,9}^tree(theta) >= b satisfies
+delta(theta) = f_{2,9}^K(theta) - f_{2,9}^tree(theta) < 0
 via interval branch and bound:
 
   P n  natural ball evaluation:                 sup f_{2,d}^tree(B) < b
@@ -30,7 +30,7 @@ Rigour model
 * sup/inf extracted via fup/flo (outward-rounded)
 
 Usage:
-  python3 certify_global_p2.py run9
+  python3 certify.py
 """
 
 import gzip
@@ -42,7 +42,10 @@ from math import comb
 from typing import TypedDict
 
 from flint import ctx, arb, acb
+from fractions import Fraction as F
 
+B = float.fromhex("0x1.473bb99c3c5eap-1")   # 0.6391275408952286
+D = 9
 PREC = 96
 GAP_SKIP = 0.03      # natural bound this far above b: split, skip gradient
 W_SAFE = 1.5e-4      # only attempt the (15 ms) delta test below this width
@@ -72,11 +75,11 @@ _Z = None  # acb zero, set per precision
 
 
 class Dual:
-    __slots__ = ("v", "d")
+    __slots__ = ("v", "g")
 
-    def __init__(self, v, d):
+    def __init__(self, v, g):
         self.v = v
-        self.d = d  # tuple of 4 acb
+        self.g = g
 
     # -- coercion ---------------------------------------------------------
     @staticmethod
@@ -85,50 +88,50 @@ class Dual:
 
     @staticmethod
     def var(v, i):
-        d = [_Z, _Z, _Z, _Z]
-        d[i] = acb(1)
-        return Dual(acb(v), tuple(d))
+        g = [_Z, _Z, _Z, _Z]
+        g[i] = acb(1)
+        return Dual(acb(v), tuple(g))
 
     # -- real/imag parts, needed by formulas that split real/imag mid-way -
     @property
     def real(self):
-        return Dual(self.v.real, tuple(a.real for a in self.d))
+        return Dual(self.v.real, tuple(a.real for a in self.g))
 
     @property
     def imag(self):
-        return Dual(self.v.imag, tuple(a.imag for a in self.d))
+        return Dual(self.v.imag, tuple(a.imag for a in self.g))
 
     def __add__(self, o):
         if isinstance(o, Dual):
             return Dual(self.v + o.v,
-                        tuple(a + b for a, b in zip(self.d, o.d)))
-        return Dual(self.v + o, self.d)
+                        tuple(a + b for a, b in zip(self.g, o.g)))
+        return Dual(self.v + o, self.g)
 
     __radd__ = __add__
 
     def __neg__(self):
-        return Dual(-self.v, tuple(-a for a in self.d))
+        return Dual(-self.v, tuple(-a for a in self.g))
 
     def __sub__(self, o):
         if isinstance(o, Dual):
             return Dual(self.v - o.v,
-                        tuple(a - b for a, b in zip(self.d, o.d)))
-        return Dual(self.v - o, self.d)
+                        tuple(a - b for a, b in zip(self.g, o.g)))
+        return Dual(self.v - o, self.g)
 
     def __rsub__(self, o):
-        return Dual(o - self.v, tuple(-a for a in self.d))
+        return Dual(o - self.v, tuple(-a for a in self.g))
 
     def __mul__(self, o):
         if isinstance(o, Dual):
             u, w = self.v, o.v
             return Dual(u * w, tuple(a * w + u * b
-                                     for a, b in zip(self.d, o.d)))
-        return Dual(self.v * o, tuple(a * o for a in self.d))
+                                     for a, b in zip(self.g, o.g)))
+        return Dual(self.v * o, tuple(a * o for a in self.g))
 
     __rmul__ = __mul__
 
     def __truediv__(self, o):  # only by scalars here
-        return Dual(self.v / o, tuple(a / o for a in self.d))
+        return Dual(self.v / o, tuple(a / o for a in self.g))
 
     def __pow__(self, n):
         n = int(n)
@@ -139,15 +142,15 @@ class Dual:
         pm1 = self.v ** (n - 1)
         v = pm1 * self.v
         c = n * pm1
-        return Dual(v, tuple(c * a for a in self.d))
+        return Dual(v, tuple(c * a for a in self.g))
 
     def cos(self):
         s, c = acb_sin_cos(self.v)
-        return Dual(c, tuple(-s * a for a in self.d))
+        return Dual(c, tuple(-s * a for a in self.g))
 
     def sin(self):
         s, c = acb_sin_cos(self.v)
-        return Dual(s, tuple(c * a for a in self.d))
+        return Dual(s, tuple(c * a for a in self.g))
 
 
 def acb_sin_cos(x):
@@ -187,7 +190,7 @@ def domain():
 #           + t ((m t y^E z + i n) P + (m t y^E z - i n) Q)
 
 
-def tree_form(E, b1, g1, b2, g2, I):
+def tree_form(b1, g1, b2, g2, I):
     """Generic; b1,g1,b2,g2 are acb balls or Duals."""
     tb1 = 2 * b1
     tb2 = 2 * b2
@@ -199,6 +202,7 @@ def tree_form(E, b1, g1, b2, g2, I):
     n = g2.sin()
     y = g1.cos()
     z = g1.sin()
+    E = D - 1
 
     yE = y ** E
     nrz = n * r * z
@@ -224,15 +228,15 @@ def tree_form(E, b1, g1, b2, g2, I):
             - (s * s * t * z) * kappa / 4)
 
 
-def tree_acb(E, x):
+def tree_acb(x):
     """Natural acb ball evaluation. Returns arb (real part)."""
-    return tree_form(E, x[0], x[1], x[2], x[3], acb(0, 1)).real
+    return tree_form(x[0], x[1], x[2], x[3], acb(0, 1)).real
 
 
-def tree_dual(E, x):
+def tree_dual(x):
     """Value + gradient over a box.  Returns (arb value, 4 arb partials)."""
-    v = tree_form(E, x[0], x[1], x[2], x[3], acb(0, 1))
-    return v.v.real, tuple(a.real for a in v.d)
+    res = tree_form(x[0], x[1], x[2], x[3], acb(0, 1))
+    return res.v.real, tuple(a.real for a in res.g)
 
 
 # --------------------------------------------------------------------------
@@ -250,110 +254,89 @@ def tree_dual(E, x):
 #       sup delta(B) <= delta(mid) + sum_i sup|d delta/d x_i (B)| * rad_i.
 
 
-def kdd_form(d, b1, g1, b2, g2, I):
+def kdd_form(b1, g1, b2, g2, I):
     """Generic; b1,g1,b2,g2 are acb/arb balls or Duals."""
-    D = d + 1
-    binom = [arb(comb(d, p)) for p in range(D)]
+    binom = [arb(comb(D, p)) for p in range(D + 1)]
     sq = [x.sqrt() for x in binom]
-    Cm = [[d * (p + q) - 2 * p * q for q in range(D)] for p in range(D)]
-    two_pow = arb(2) ** arb(d)
+    Cm = [[D * (p + q) - 2 * p * q for q in range(D + 1)] for p in range(D + 1)]
+    two_pow = arb(2) ** arb(D)
 
-    psi = [[None] * D for _ in range(D)]
-    for p in range(D):
-        for q in range(p, D):
+    psi = [[None] * (D + 1) for _ in range(D + 1)]
+    for p in range(D + 1):
+        for q in range(p, D + 1):
             psi[p][q] = acb(sq[p] * sq[q] / two_pow)
 
     def get(p, q):
         return psi[p][q] if p <= q else psi[q][p]
 
     for beta, gamma in ((b1, g1), (b2, g2)):
-        for p in range(D):
-            for q in range(p, D):
+        for p in range(D + 1):
+            for q in range(p, D + 1):
                 u = gamma * Cm[p][q]
                 psi[p][q] = psi[p][q] * (u.cos() - I * u.sin())
         c, s = beta.cos(), beta.sin()
         ms = (-I) * s
-        Mx = [[None] * D for _ in range(D)]
-        for pp in range(D):
-            for p in range(D):
+        Mx = [[None] * (D + 1) for _ in range(D + 1)]
+        for pp in range(D + 1):
+            for p in range(D + 1):
                 acc = acb(0)
-                for k in range(max(0, p - pp), min(d - pp, p) + 1):
-                    coef = arb(comb(d - pp, k) * comb(pp, p - k))
-                    acc = acc + c ** (d + p - pp - 2 * k) \
+                for k in range(max(0, p - pp), min(D - pp, p) + 1):
+                    coef = arb(comb(D - pp, k) * comb(pp, p - k))
+                    acc = acc + c ** (D + p - pp - 2 * k) \
                         * ms ** (2 * k + pp - p) * coef
                 Mx[pp][p] = acc * (sq[pp] / sq[p])
 
-        mid = [[None] * D for _ in range(D)]
-        for i in range(D):
-            for j in range(D):
+        mid = [[None] * (D + 1) for _ in range(D + 1)]
+        for i in range(D + 1):
+            for j in range(D + 1):
                 acc = acb(0)
-                for t in range(D):
+                for t in range(D + 1):
                     acc = acc + Mx[i][t] * get(t, j)
                 mid[i][j] = acc
 
-        new = [[None] * D for _ in range(D)]
-        for i in range(D):
-            for j in range(i, D):
+        new = [[None] * (D + 1) for _ in range(D + 1)]
+        for i in range(D + 1):
+            for j in range(i, D + 1):
                 acc = acb(0)
-                for t in range(D):
+                for t in range(D + 1):
                     acc = acc + mid[i][t] * Mx[j][t]
                 new[i][j] = acc
         psi = new
 
     tot = acb(0)
-    for p in range(D):
+    for p in range(D + 1):
         z = psi[p][p]
         tot = tot + (z.real ** 2 + z.imag ** 2) * Cm[p][p]
-        for q in range(p + 1, D):
+        for q in range(p + 1, D + 1):
             z = psi[p][q]
             tot = tot + 2 * (z.real ** 2 + z.imag ** 2) * Cm[p][q]
-    return tot / (d ** 2)
+    return tot / (D ** 2)
 
 
-def kdd_ball(d, b1, g1, b2, g2):
-    """Enclosure of f_{2,d}^K at p=2."""
-    return kdd_form(d, b1, g1, b2, g2, acb(0, 1)).real
+def kdd_ball(b1, g1, b2, g2):
+    """Enclosure of f_{2,9}^K at p=2."""
+    return kdd_form(b1, g1, b2, g2, acb(0, 1)).real
 
 
-def kdd_dual(d, x):
-    """(value, gradient) of f_{2,d}^K over a box."""
-    v = kdd_form(d, x[0], x[1], x[2], x[3], acb(0, 1))
-    return v.v.real, tuple(a.real for a in v.d)
+def kdd_dual(x):
+    """(value, gradient) of f_{2,9}^K over a box."""
+    res = kdd_form(x[0], x[1], x[2], x[3], acb(0, 1))
+    return res.v.real, tuple(a.real for a in res.g)
 
-
-class _Const(TypedDict):
-    b: float
-    witness: list[str]
-
-
-# certified lower bounds on f_{2,9}^tree and witness points (arb point
-# enclosures, radius ~8.7e-77); re-certified at run time by verify_b
-# tests for d \neq 9 would need their own entry
-CONSTANTS: dict[int, _Const] = {
-    9: {
-        "b": float.fromhex("0x1.473bb99c3c5eap-1"),   # 0.6391275408952286
-        "witness": ["-0x1.04f3d4e04111ap-1", "-0x1.0b184cde2ef9ap-2",
-                    "-0x1.6f1f7f7dd666ep+1", "0x1.56f3f40791132p+1"],
-    },
-}
-
-
-def verify_b(d, b, witness_hex):
-    """Certify b <= f_{2,d}^tree(witness)."""
+def verify_b():
+    """Certify b <= f_{2,9}^tree(witness)."""
     _set_prec(256)
+    witness_hex = ["-0x1.04f3d4e04111ap-1", "-0x1.0b184cde2ef9ap-2",
+                   "-0x1.6f1f7f7dd666ep+1", "0x1.56f3f40791132p+1"]
     x = [acb(arb(float.fromhex(h))) for h in witness_hex]
-    v = tree_acb(d - 1, x)
+    v = tree_acb(x)
     lo = flo(v)
-    assert lo >= b, f"b verification failed: {lo} < {b}"
+    assert lo >= B, f"b verification failed: {lo} < {B}"
     return lo
 
 
 def _ball(lo, hi):
-    """(m, r) floats with [m-r, m+r] >= [lo, hi], containment PROVEN exactly.
-
-    The containment check is done in exact rational arithmetic.
-    """
-    from fractions import Fraction as F
+    """(m, r) floats with [m-r, m+r] >= [lo, hi]."""
     m = 0.5 * (lo + hi)
     r = max(m - lo, hi - m)
     if r > 0.0:
@@ -362,19 +345,16 @@ def _ball(lo, hi):
     return m, r
 
 
-def cover(d, b, out_path, max_seconds=36000.0,
+def cover(out_path, max_seconds=36000.0,
           max_boxes=200_000_000) -> dict[str, object]:
     """Run the covering search; returns stats dict. Writes certificate."""
     _set_prec(PREC)
-    E = d - 1
     dom = domain()
     t0 = time.time()
     f = gzip.open(out_path, "wt")
-    header = dict(kind="wl-global-p2-cover", version=1, d=d, p=2, prec=PREC,
-                  b_hex=float.hex(b), dom_hex=[[float.hex(x), float.hex(y)]
+    header = dict(kind="cover", version=1, d=D, p=2, prec=PREC,
+                  b_hex=float.hex(B), dom_hex=[[float.hex(x), float.hex(y)]
                                                 for x, y in dom],
-                  witness_hex=(CONSTANTS[d]["witness"] if d in CONSTANTS
-                               else None),
                   gap_skip=GAP_SKIP, w_safe=W_SAFE, min_w=MIN_W,
                   order="b1,g1,b2,g2",
                   tree="preorder; N k -> low subtree then high subtree")
@@ -395,7 +375,7 @@ def cover(d, b, out_path, max_seconds=36000.0,
         box = stack.pop()
         n["boxes"] += 1
         if n["boxes"] % LOG_EVERY == 0:
-            print(f"  boxes={n['boxes']} stack={len(stack)} "
+            print(f" boxes={n['boxes']} stack={len(stack)} "
                   f"pn={n['pn']} pc={n['pc']} S={n['safe']} "
                   f"t={time.time()-t0:.0f}s", flush=True)
 
@@ -406,8 +386,8 @@ def cover(d, b, out_path, max_seconds=36000.0,
 
         # 1. natural prune
         n["evals"] += 1
-        val = tree_acb(E, [acb(arb(m, r)) for m, r in mr])
-        gap = fup(val) - b
+        val = tree_acb([acb(arb(m, r)) for m, r in mr])
+        gap = fup(val) - B
         if gap < 0.0:
             f.write("P n\n")
             n["pn"] += 1
@@ -417,20 +397,18 @@ def cover(d, b, out_path, max_seconds=36000.0,
         if gap <= GAP_SKIP:
             # 2. centred prune
             n["duals"] += 1
-            _, g = tree_dual(E, [Dual.var(arb(m, r), i)
-                               for i, (m, r) in enumerate(mr)])
+            _, g = tree_dual([Dual.var(arb(m, r), i)
+                             for i, (m, r) in enumerate(mr)])
             gmag = [math.nextafter(max(abs(float(gi.upper())),
                                        abs(float(gi.lower()))), math.inf)
                     for gi in g]
             n["evals"] += 1
-            fc = tree_acb(E, [acb(arb(m)) for m, _ in mr])
-            # mean-value form; radius term g_i * [-r_i, r_i] is formed in
-            # arb; contrib stays float: only steers the split heuristic.
-            bound = fc
+            tree_c = tree_acb([acb(arb(m)) for m, _ in mr])
+            bound = tree_c
             contrib = [gmag[i] * mr[i][1] for i in range(4)]
             for i in range(4):
                 bound = bound + g[i] * arb(0.0, mr[i][1])
-            if fup(bound) < b:
+            if fup(bound) < B:
                 f.write("P c\n")
                 n["pc"] += 1
                 continue
@@ -439,13 +417,10 @@ def cover(d, b, out_path, max_seconds=36000.0,
             if maxw <= W_SAFE:
                 n["dduals"] += 1
                 b1, g1, b2, g2 = (arb(m) for m, _ in mr)
-                kdd_c = kdd_ball(d, b1, g1, b2, g2)
-                _, gd = kdd_dual(
-                    d, [Dual.var(arb(m, r), i)
-                        for i, (m, r) in enumerate(mr)])
-                # gradient of delta = f_{2,9}^K - f_{2,9}^tree as an arb
-                # enclosure difference; radius term in ball arithmetic
-                dbound = kdd_c - fc
+                kdd_c = kdd_ball(b1, g1, b2, g2)
+                _, gd = kdd_dual([Dual.var(arb(m, r), i)
+                                 for i, (m, r) in enumerate(mr)])
+                dbound = kdd_c - tree_c
                 for i in range(4):
                     dbound = dbound + (gd[i] - g[i]) * arb(0.0, mr[i][1])
                 sup_d = fup(dbound)
@@ -464,7 +439,7 @@ def cover(d, b, out_path, max_seconds=36000.0,
                         "reason": "width floor: cannot discharge",
                         "box_lo": list(map(float.hex, lo)),
                         "box_hi": list(map(float.hex, hi)),
-                        "delta_center": fup(kdd_c - fc),
+                        "delta_center": fup(kdd_c - tree_c),
                         "stats": n, "seconds": time.time() - t0}
                     return diag
 
@@ -494,17 +469,12 @@ def cover(d, b, out_path, max_seconds=36000.0,
 
 
 def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else "run9"
-    if mode != "run9":
-        raise SystemExit(f"unknown mode {mode}")
-    d, b = 9, CONSTANTS[9]["b"]
-    out = "cert_global_p2_d9.jsonl.gz"
-    wlo = verify_b(d, b, CONSTANTS[d]["witness"])
-    print(f"b verified: {b!r} <= certified point value {wlo!r}")
-    print(f"mode={mode} d={d} b={b!r} prec={PREC}")
-    res = cover(d, b, out, max_seconds=36000.0)
-    res["mode"] = mode
-    res["b_hex"] = float.hex(b)
+    out = "certificate.jsonl.gz"
+    wlo = verify_b()
+    print(f"b verified: {B!r} <= certified point value {wlo!r}")
+    print(f"d={D} b={B!r} prec={PREC}")
+    res = cover(out, max_seconds=36000.0)
+    res["b_hex"] = float.hex(B)
     res.pop("safe_boxes", None)
     json.dump(res, open(out.replace(".jsonl.gz", "_result.json"), "w"),
               indent=1)
