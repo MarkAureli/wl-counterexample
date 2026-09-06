@@ -47,6 +47,8 @@ from fractions import Fraction as F
 B = float.fromhex("0x1.473bb99c3c5eap-1")   # 0.6391275408952286
 D = 9
 PREC = 96
+WITNESS_HEX = ["-0x1.04f3d4e04111ap-1", "-0x1.0b184cde2ef9ap-2",
+               "-0x1.6f1f7f7dd666ep+1", "0x1.56f3f40791132p+1"]
 GAP_SKIP = 0.03      # natural bound this far above b: split, skip gradient
 W_SAFE = 1.5e-4      # only attempt the (15 ms) delta test below this width
 MIN_W = 1e-8         # width floor
@@ -326,9 +328,7 @@ def kdd_dual(x):
 def verify_b():
     """Certify b <= f_{2,9}^tree(witness)."""
     _set_prec(256)
-    witness_hex = ["-0x1.04f3d4e04111ap-1", "-0x1.0b184cde2ef9ap-2",
-                   "-0x1.6f1f7f7dd666ep+1", "0x1.56f3f40791132p+1"]
-    x = [acb(arb(float.fromhex(h))) for h in witness_hex]
+    x = [acb(arb(float.fromhex(h))) for h in WITNESS_HEX]
     v = tree_acb(x)
     lo = flo(v)
     assert lo >= B, f"b verification failed: {lo} < {B}"
@@ -355,6 +355,7 @@ def cover(out_path, max_seconds=36000.0,
     header = dict(kind="cover", version=1, d=D, p=2, prec=PREC,
                   b_hex=float.hex(B), dom_hex=[[float.hex(x), float.hex(y)]
                                                 for x, y in dom],
+                  witness_hex=WITNESS_HEX,
                   gap_skip=GAP_SKIP, w_safe=W_SAFE, min_w=MIN_W,
                   order="b1,g1,b2,g2",
                   tree="preorder; N k -> low subtree then high subtree")

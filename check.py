@@ -1,55 +1,41 @@
-"""Independent checker for the global-optimality certificate (mpmath.iv only).
+"""Independent checker for the global-optimality certificate (mpmath.iv).
 
-Independent re-implementation of the verifier for the certificates written by
-`certify_global_p2.py`.
-
-  * arithmetic is mpmath's inf-sup interval type (`mpmath.iv`) instead of arb
-  * both scalar engines are transcribed here from their defining formulas
-    (Marwaha's p=2 girth>5 closed form for f_2 on the d-regular tree, and the
-    two-sided Dicke reduction of QAOA_2 on K_{d,d});
+  * arithmetic is mpmath's inf-sup interval type (`mpmath.iv`)
   * stdlib + mpmath only.
 
 What is verified
 ----------------
-The certificate is gzipped text: line 1 a JSON header, then a preorder walk of
+Certificate is gzipped text: line 1 a JSON header, then a preorder walk of
 the box tree, one record per line:
 
     N <k>        internal node, split coordinate k, low subtree then high
     P n | P c    prune leaf: sup f_2(box) < b
-    S <hex>      safe leaf: sup [<C_e> - f_2](box) < 0
+    S <hex>      safe leaf: sup [f_{2,9}^K - f_{2,9}^tree](box) < 0
 
-The file names split coordinates ONLY, so every box is reconstructed here from
-the header domain by exact float-midpoint bisection; there are no coordinates
-in the file to trust.  Checks performed:
+The file names split coordinates only; every box is reconstructed here from
+the header domain by exact float-midpoint bisection. Checks performed:
 
-  1. structural: the recorded preorder walk replays against an explicit stack,
+  1. structural: the recorded preorder walk replays against explicit stack,
      every leaf discharges exactly one box, and the stack is empty at EOF.
-     Any record other than N/P/S (e.g. "ABORT budget") is rejected.  This
+     Any record other than N/P/S (e.g. "ABORT budget") is rejected. This
      proves the leaves tile the header domain exactly.
   2. domain: the header domain equals the reduced fundamental domain,
      recomputed here from math.pi with outward rounding.
   3. enclosing balls: for each box coordinate [lo,hi] the ball (m, r) with
      m = 0.5*(lo+hi), r = nextafter(max(m-lo, hi-m), +inf) is checked to
-     contain [lo,hi] in EXACT rational arithmetic (fractions.Fraction);
-     binary64 is a subset of Q so this cannot false-pass at any depth.
-  4. P leaves: sup f_2(ball) < b by natural interval evaluation; if that fails
-     (interval dependency is expression-shaped, so the arb and iv natural
-     bounds differ slightly) the first-order centred form
-        f_2(mid) + sum_i sup|d f_2/d x_i|(ball) * r_i
-     is used, with the gradient enclosure from forward-mode dual numbers over
-     iv.mpc.  One of the two must be < b.
-  5. S leaves: centred form on delta = <C_e> - f_2,
-        delta(mid) + sum_i (sup|d C_e/d x_i| + sup|d f_2/d x_i|) * r_i  <  0,
-     and c = -max_S sup delta is RECOMPUTED here, never read from the file.
-  6. witness: b <= inf f_2(d; witness) at iv.dps = 40, read from the header
-     (witness_hex/b_hex) -- cross-engine agreement between this mpmath.iv
-     value and the arb/flint value certified by the producer's verify_b.
-All angles enter as float.fromhex; no decimal angle string is ever parsed into
-high precision (repo rule E3), and no angle is read from a document.
+     contain [lo,hi] in EXACT rational arithmetic (fractions.Fraction).
+  4. P leaves: sup f_{2,9}^tree(ball) < b by natural interval evaluation;
+     if that fails, the first-order centred form
+     f_{2,9}^tree(mid) + sum_i sup|\del f_{2,9}^tree /\del x_i|(ball) * r_i
+     is used. One of the two must be < b.
+  5. S leaves: c = -max_S sup delta is recomputed, never read from the file.
+  6. witness: b <= inf f_{2,9}^tree(witness) at iv.dps = 40, read from the
+     header (witness_hex/b_hex): cross-engine agreement between mpmath.iv
+     value and the arb/flint value from certifier's verify_b.
 
 Usage
 -----
-    python3 check_global_p2_d9_mpiv.py <cert.jsonl.gz>
+    python3 check.py <cert.jsonl.gz>
 Exit status 0 iff every check passes (full run: every P and S leaf).
 """
 # pyright: reportArgumentType=false, reportOperatorIssue=false
@@ -65,6 +51,8 @@ from fractions import Fraction
 from math import comb
 
 from mpmath import iv, mp
+
+D = 9
 
 # --------------------------------------------------------------------------
 # outward endpoint extraction
@@ -236,19 +224,21 @@ def _re(z):
 
 
 # --------------------------------------------------------------------------
-# engine 1: Marwaha p=2 closed form for f_2 on the d-regular tree (E = d-1)
+# Marwaha's closed form
+# --------------------------------------------------------------------------
 #
-#   c = cos 2b2, s = sin 2b2, r = cos 2b1, t = sin 2b1,
-#   m = cos g2, n = sin g2, y = cos g1, z = sin g1, yE = y^E
+#   f_{2,d}^tree = 1/2 + c^2 r t y^E z - (c s/2) alpha - (s^2 t z/4) kappa
+#   c = cos(2 beta2), m = cos(gamma2), r = cos(2 beta1), y = cos(gamma1)
+#   s = sin(2 beta2), n = sin(gamma2), t = sin(2 beta1), z = sin(gamma1),
+#   E = d-1
 #   A = (m y - n r z)^E,  B = (m y + n r z)^E
-#   P = (m + i n t yE z)^E,  Q = (m - i n t yE z)^E
+#   P = (m + i n t y^E z)^E,  Q = (m - i n t y^E z)^E
 #   kappa = ((1+r) A - (1-r) B) (P + Q)
 #   alpha = (1+r)(-m r z - n y) A + (1-r)(m r z - n y) B
-#           + t ((m t yE z + i n) P + (m t yE z - i n) Q)
-#   f_2  = 1/2 + c^2 r t yE z - (c s / 2) alpha - (s^2 t z / 4) kappa
-# --------------------------------------------------------------------------
+#           + t ((m t y^E z + i n) P + (m t y^E z - i n) Q)
 
-def f_tree_form(E, b1, g1, b2, g2, I):
+
+def tree_form(b1, g1, b2, g2, I):
     c = (2 * b2).cos()
     s = (2 * b2).sin()
     r = (2 * b1).cos()
@@ -257,12 +247,12 @@ def f_tree_form(E, b1, g1, b2, g2, I):
     n = g2.sin()
     y = g1.cos()
     z = g1.sin()
-    yE = y ** E
-    A = (m * y - n * r * z) ** E
-    B = (m * y + n * r * z) ** E
+    yE = y ** (D - 1)
+    A = (m * y - n * r * z) ** (D - 1)
+    B = (m * y + n * r * z) ** (D - 1)
     q = n * t * yE * z
-    P = (m + q * I) ** E
-    Q = (m - q * I) ** E
+    P = (m + q * I) ** (D - 1)
+    Q = (m - q * I) ** (D - 1)
     kappa = ((1 + r) * A - (1 - r) * B) * (P + Q)
     w = m * t * yE * z
     alpha = ((1 + r) * (-(m * r * z) - n * y) * A
@@ -273,64 +263,63 @@ def f_tree_form(E, b1, g1, b2, g2, I):
             - (s * s * t * z) * kappa / 4)
 
 
-def f_tree(E, x, I):
-    """x: 4 IVC (no gradient) in order (b1,g1,b2,g2).  Returns iv.mpf."""
-    return _re(f2_form(E, x[0], x[1], x[2], x[3], I).v)
+def tree(x, I):
+    """x: 4 IVC (no gradient) in order (b1,g1,b2,g2). Returns iv.mpf."""
+    return _re(tree_form(x[0], x[1], x[2], x[3], I).v)
 
 
-def f_tree_grad(E, x, I):
-    """x: 4 IVC seeded as variables.  Returns (iv.mpf, 4 iv.mpf)."""
-    out = f2_form(E, x[0], x[1], x[2], x[3], I)
+def tree_grad(x, I):
+    """x: 4 IVC seeded as variables. Returns (iv.mpf, 4 iv.mpf)."""
+    out = tree_form(x[0], x[1], x[2], x[3], I)
     return _re(out.v), tuple(_re(a) for a in out.g)
 
 
 # --------------------------------------------------------------------------
-# engine 2: f_{2,9}^K, two-sided Dicke reduction
+# K_{d,d} per-edge engine
+# --------------------------------------------------------------------------
 #
 #   psi0[p][q]  = sqrt(C(d,p) C(d,q)) / 2^d        (|+>^{2d} in Dicke basis)
-#   Cm[p][q]    = p(d-q) + (d-p)q                  (cut value)
+#   Cm[p][q]    = d(p+q) - 2pq                     (cut value)
 #   phase layer : psi[p][q] *= cos(gamma Cm[p][q]) - i sin(gamma Cm[p][q])
 #   mixer       : M[p'][p] = sqrt(C(d,p')/C(d,p))
 #                 * sum_k C(d-p',k) C(p',p-k)
-#                   cos(beta)^(d-p'+p-2k) (-i sin beta)^(2k+p'-p),
+#                   cos(beta)^(d+p-p'-2k) (-i sin beta)^(2k+p'-p),
 #                 k = max(0, p-p') .. min(d-p', p')
-#   psi <- M psi M^T ;   f_{2,9}^K = sum |psi[p][q]|^2 Cm[p][q] / d^2
+#   psi <- M psi M^T ;   f_{2,d}^K = sum |psi[p][q]|^2 Cm[p][q] / d^2
 # --------------------------------------------------------------------------
 
-def _mixer(d, cb, sb, I):
-    D = d + 1
-    sq = [iv.sqrt(iv.mpf([comb(d, p), comb(d, p)])) for p in range(D)]
+def _mixer(cb, sb, I):
+    sq = [iv.sqrt(iv.mpf([comb(D, p), comb(D, p)])) for p in range(D + 1)]
     ms = sb * (-I)
-    Mx = [[None] * D for _ in range(D)]
-    for iq in range(D):
-        for ip in range(D):
+    Mx = [[None] * (D+ 1) for _ in range(D + 1)]
+    for pp in range(D + 1):
+        for p in range(D + 1):
             acc = IVC.const(0)
-            for k in range(max(0, ip - iq), min(d - iq, ip) + 1):
-                coef = comb(d - iq, k) * comb(iq, ip - k)
-                acc = acc + ((cb ** (d - iq + ip - 2 * k))
-                             * (ms ** (iq - ip + 2 * k))
+            for k in range(max(0, p - pp), min(D - pp, p) + 1):
+                coef = comb(D - pp, k) * comb(pp, p - k)
+                acc = acc + ((cb ** (D + p - pp - 2 * k))
+                             * (ms ** (2 * k + pp - p))
                              * IVC.const(iv.mpf([coef, coef])))
-            Mx[iq][ip] = acc * IVC.const(sq[iq] / sq[ip])
+            Mx[pp][p] = acc * IVC.const(sq[pp] / sq[p])
     return Mx
 
 
-def f_kdd_form(d, b1, g1, b2, g2, I):
+def kdd_form(b1, g1, b2, g2, I):
     """Returns (psi as (d+1)x(d+1) IVC, Cm integer table)."""
-    D = d + 1
-    sq = [iv.sqrt(iv.mpf([comb(d, p), comb(d, p)])) for p in range(D)]
-    two_pow = iv.mpf([2, 2]) ** d
-    Cm = [[d * (p + q) - 2 * p * q for q in range(D)] for p in range(D)]
-    psi = [[IVC.const(sq[p] * sq[q] / two_pow) for q in range(D)]
-           for p in range(D)]
+    sq = [iv.sqrt(iv.mpf([comb(D, p), comb(D, p)])) for p in range(D + 1)]
+    two_pow = iv.mpf([2, 2]) ** D
+    Cm = [[D * (p + q) - 2 * p * q for q in range(D + 1)] for p in range(D + 1)]
+    psi = [[IVC.const(sq[p] * sq[q] / two_pow) for q in range(D + 1)]
+           for p in range(D + 1)]
     for gamma, beta in ((g1, b1), (g2, b2)):
-        for p in range(D):
-            for q in range(D):
+        for p in range(D + 1):
+            for q in range(D + 1):
                 u = gamma * Cm[p][q]
                 psi[p][q] = psi[p][q] * (u.cos() - u.sin() * I)
-        Mx = _mixer(d, beta.cos(), beta.sin(), I)
-        tmp = [[_dot(Mx[i], [psi[t][j] for t in range(D)])
-                for j in range(D)] for i in range(D)]
-        psi = [[_dot(tmp[i], Mx[j]) for j in range(D)] for i in range(D)]
+        Mx = _mixer(beta.cos(), beta.sin(), I)
+        tmp = [[_dot(Mx[i], [psi[t][j] for t in range(D + 1)])
+                for j in range(D + 1)] for i in range(D + 1)]
+        psi = [[_dot(tmp[i], Mx[j]) for j in range(D + 1)] for i in range(D + 1)]
     return psi, Cm
 
 
@@ -341,25 +330,23 @@ def _dot(u, v):
     return acc
 
 
-def f_kdd(d, x, I):
-    psi, Cm = f_kdd_form(d, x[0], x[1], x[2], x[3], I)
-    D = d + 1
+def kdd(d, x, I):
+    psi, Cm = kdd_form(x[0], x[1], x[2], x[3], I)
     tot = iv.mpf([0, 0])
-    for i in range(D):
-        for j in range(D):
+    for i in range(D + 1):
+        for j in range(D + 1):
             z = psi[i][j].v
             w = Cm[i][j]
             tot = tot + (z.real ** 2 + z.imag ** 2) * iv.mpf([w, w])
-    return tot / iv.mpf([d * d, d * d])
+    return tot / iv.mpf([D * D, D * D])
 
 
-def f_kdd_grad(d, x, I):
-    psi, Cm = f_kdd_form(d, x[0], x[1], x[2], x[3], I)
-    D = d + 1
+def kdd_grad(x, I):
+    psi, Cm = kdd_form(x[0], x[1], x[2], x[3], I)
     tot = iv.mpf([0, 0])
     tg = [iv.mpf([0, 0])] * 4
-    for p in range(D):
-        for q in range(D):
+    for p in range(D + 1):
+        for q in range(D + 1):
             z = psi[p][q]
             zv = z.v
             w = iv.mpf([Cm[p][q], Cm[p][q]])
@@ -368,7 +355,7 @@ def f_kdd_grad(d, x, I):
                 di = z.g[i]
                 tg[i] = tg[i] + (zv.real * di.real
                                  + zv.imag * di.imag) * (2 * w)
-    dd2 = iv.mpf([d * d, d * d])
+    dd2 = iv.mpf([D * D, D * D])
     return tot / dd2, tuple(t / dd2 for t in tg)
 
 
@@ -406,29 +393,29 @@ def expected_domain():
 # leaf tests
 # --------------------------------------------------------------------------
 
-def check_prune(E, mr, b, I):
+def check_prune(mr, b, I):
     """sup f_{2,9}^tree(box) < b, naturally, else by the centred form."""
     ball = [ball_ivc(m, r) for m, r in mr]
-    nat = sup(f_tree(E, ball, I))
+    nat = sup(tree(ball, I))
     if nat < b:
         return True, "n", nat
     dual = [ball_ivc(m, r, i) for i, (m, r) in enumerate(mr)]
-    _, g = f_tree_grad(E, dual, I)
+    _, g = tree_grad(dual, I)
     mid = [IVC.const(iv.mpf([m, m])) for m, _ in mr]
-    bound = f_tree(E, mid, I)
+    bound = tree(mid, I)
     for i in range(4):
         bound = bound + _sym(math.nextafter(mag(g[i]) * mr[i][1], math.inf))
     ctr = sup(bound)
     return ctr < b, "c", ctr
 
 
-def check_safe(d, E, mr, I):
+def check_safe(mr, I):
     """sup [f_{2,9}^K - f_{2,9}^tree](box) < 0 by the centred form."""
     dual = [ball_ivc(m, r, i) for i, (m, r) in enumerate(mr)]
     mid = [IVC.const(iv.mpf([m, m])) for m, _ in mr]
-    _, gf = f_tree_grad(E, dual, I)
-    _, gc = f_kdd_grad(d, dual, I)
-    bound = f_kdd(d, mid, I) - f_tree(E, mid, I)
+    _, gf = tree_grad(dual, I)
+    _, gc = kdd_grad(dual, I)
+    bound = kdd(D, mid, I) - tree(mid, I)
     for i in range(4):
         gm = math.nextafter(mag(gf[i]) + mag(gc[i]), math.inf)
         bound = bound + _sym(math.nextafter(gm * mr[i][1], math.inf))
@@ -440,27 +427,23 @@ def check_safe(d, E, mr, I):
 # certificate replay
 # --------------------------------------------------------------------------
 
-D = 9
-
 
 def check(path):
     dps, wit_dps = 25, 40
     fh = gzip.open(path, "rt")
     header = json.loads(fh.readline())
-    if header.get("kind") != "wl-global-p2-cover" or header.get("p") != 2:
+    if header.get("kind") != "cover" or header.get("p") != 2:
         raise SystemExit(f"bad header kind/p: {header.get('kind')!r}")
     if header.get("order") != "b1,g1,b2,g2":
         raise SystemExit(f"unexpected variable order {header.get('order')!r}")
     if header.get("d") != D:
         raise SystemExit(f"expected d={D}, header has d={header.get('d')!r}")
-    d = D
-    E = d - 1
     b = float.fromhex(header["b_hex"])
     dom = [(float.fromhex(x), float.fromhex(y))
-           for x, y in header["domain_hex"]]
+           for x, y in header["dom_hex"]]
     if dom != [tuple(t) for t in expected_domain()]:
         raise SystemExit("header domain is not the reduced fundamental domain")
-    print(f"header: d={d}  b={b!r}  domain OK (reduced fundamental domain)")
+    print(f"header: d={D}  b={b!r}  domain OK (reduced fundamental domain)")
 
     set_dps(wit_dps)
     I = iv.mpc(iv.mpf([0, 0]), iv.mpf([1, 1]))
@@ -469,16 +452,13 @@ def check(path):
         raise SystemExit("header has no witness_hex")
     wit = [IVC.const(iv.mpf([float.fromhex(h), float.fromhex(h)]))
            for h in wh]
-    fw = f2_value(E, wit, I)
+    fw = tree(wit, I)
     lo = inf(fw)
     if lo < b:
-        raise SystemExit(f"witness check failed: f_2 >= {lo!r} < b={b!r}")
-    # E-G12: report the margin from the interval endpoint at working
-    # precision; the outward-rounded binary64 endpoint prints 0 when b is
-    # exactly that endpoint, misreading as "certified only up to equality".
+        raise SystemExit(f"could not establish f_{2,9}^tree >= b={b!r}")
     mp.dps = wit_dps + 10
     marg = mp.mpf(fw.a) - mp.mpf(b)
-    print(f"witness: b = {b!r} <= f_2(witness) >= {lo!r} "
+    print(f"witness: b = {b!r} <= f_{{2,9}}^tree(witness) >= {lo!r} "
           f"(interval lower endpoint - b = {mp.nstr(marg, 6)}, "
           f"iv.dps={wit_dps})")
 
@@ -520,16 +500,16 @@ def check(path):
                 raise SystemExit(f"line {nline}: bad P record {tok!r}")
             counts["P " + tok[1]] += 1
             mr = [enclosing_ball(x, y) for x, y in box]
-            ok, how, val = check_prune(E, mr, b, I)
+            ok, how, val = check_prune(mr, b, I)
             if not ok:
-                raise SystemExit(f"line {nline}: P leaf FAILS, sup f_{2,9}^tree "
+                raise SystemExit(f"line {nline}: P leaf FAILS, sup f_{{2,9}}^tree "
                                  f"<= {val!r} not < b={b!r}, box={box}")
             checked["P"] += 1
             modes[how] += 1
         elif head == "S":
             counts["S"] += 1
             mr = [enclosing_ball(x, y) for x, y in box]
-            ok, s = check_safe(d, E, mr, I)
+            ok, s = check_safe(mr, I)
             if not ok:
                 raise SystemExit(f"line {nline}: S leaf FAILS, sup delta "
                                  f"<= {s!r} not < 0, box={box}")
@@ -553,7 +533,7 @@ def check(path):
         print(f"\n  c = {c!r}   (= -max certified sup delta over S leaves, "
               "recomputed here)")
         print(f"THEOREM (mpmath.iv engine): every theta with "
-              f"f_2({d};theta) >= {b!r} satisfies")
+              f"f_{{2,9}}^tree(theta) >= {b!r} satisfies")
         print(f"  f_{{2,9}}^K(theta) - f_{{2,9}}^tree(theta) <= {worst_safe!r} "
               f"< 0;  violation at least {c:.6e}.")
     else:
