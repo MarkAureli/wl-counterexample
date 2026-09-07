@@ -10,7 +10,7 @@ $\geq b$ is certified to perform worse on $K_{9,9}$ by at least
 
 For the Lemma: The certified tree upper bound is **u = 0.6391276594250365**
 (`0x1.473bbd96662c7p-1`), and a parameter witness is certified to perform
-strictly better than $u$ on $K_{9,9}$. The certidicate is derivative of the
+strictly better than $u$ on $K_{9,9}$. The certidicate is a derivative of the
 above Theorem certificate.
 
 
@@ -25,7 +25,7 @@ above Theorem certificate.
 | §4 | Theorem: Verification record and reproduction |
 | §5 | Lemma |
 | §6 | Lemma: Proof shape |
-| §7 | Lemma: Verrification record and reproduction |
+| §7 | Lemma: Reproduction |
 | §8 | File manifest |
 
 
@@ -35,9 +35,9 @@ above Theorem certificate.
 
 Let **b := `0x1.473bb99c3c5eap-1` = 0.6391275408952286** and
 **c := `0x1.7ed9af28483cfp-9` = 0.002920916205895164**. Then
-&nbsp;&nbsp;**i)** $b \leq f_{2,9}^{tree,*}$ and
-&nbsp;&nbsp;**ii)** for every $(\bm{\beta}, \bm{\gamma}) \in \mathbb{R}^{4}$
-with $f_{2,9}^{tree}(\bm{\beta}, \bm{\gamma}) ≥ b$ it is $f_{2,9}^{K}(\bm{\beta}, \bm{\gamma}) − f_{2,9}^{tree}(\bm{\beta}, \bm{\gamma}) \leq −c$.
+  **i)** $b \leq f_{2,9}^{\text{tree},*}$ and
+  **ii)** for every $(\beta, \gamma) \in \mathbb{R}^{4}$
+with $f_{2,9}^{\text{tree}}(\beta, \gamma) \geq b$ it is $f_{2,9}^{K}(\beta, \gamma) − f_{2,9}^{\text{tree}}(\beta, \gamma) \leq −c$.
 
 
 ---
@@ -55,7 +55,7 @@ $f_{2,9}^{\text{tree},*}$ at the witness angles below and verified by the certif
 
 $f_{2,9}^{\text{tree}}(v) − b$ = **+1.5810285419253478e-16** (= +1.42 ULP), rigorously positive in two independent engines.
 
-**Box-tree covering for part ii).** a covering certificate: a **3,237,923-node** binary box tree on $D = [-\pi/4, \pi/4] \times [0, \pi] \times [-\pi/4, \pi/4] \times [-\pi, \pi]$, every leaf discharged as:
+**Box-tree covering for part ii).** a **3,237,923-node** binary box tree on $D = [-\pi/4, \pi/4] \times [0, \pi] \times [-\pi/4, \pi/4] \times [-\pi, \pi]$, every leaf discharged as:
 - **P** ($\sup f_{2,9}^{\text{tree}} < b$ on the leaf; natural ball evaluation or centred form with AD gradient
   enclosures) — **1,605,938** leaves, split as 298,679 "P n" (natural bound sufficed) and
   1,307,259 "P c" (needed the centred/gradient form);
@@ -71,7 +71,7 @@ with **c = −max_S sup δ**, formed outward at every step. 1,618,961 internal n
 | leg | engine | result |
 |---|---|---|
 | Certifier `certify_theorem.py` | arb, 96 bits | 3,237,923 boxes |
-| Checker `check_theorem.py` | mpmath.iv | **PASS**, full unsampled pass, all 1,618,962 leaves |
+| Checker `check_theorem.py` | mpmath.iv | full unsampled pass, all 1,618,962 leaves |
 
 ### Reproduce
 
@@ -87,59 +87,24 @@ python3 check_theorem.py certificate.jsonl.gz   # ~2 h, heartbeat every 250k rec
 Let **u := `0x1.473bbd96662c7p-1` = 0.6391276594250365**, $w = (\beta_{1}, \gamma_{1}, \beta_{2}, \gamma_{2})$ with
 **beta1 := `0x1.0189541bf092fp-1` = 0.5030008586984759**, **gamma1 := `0x1.752b5bc9d2407p+1` = 2.9153856978850885**,
 **beta2 := `-0x1.e0c856d2ed88ap-2` = -0.46951423323060537**, and **gamma2 := `0x1.6f478b15e56c7p+1` = 2.8693708283343287**.  Then
-&nbsp;&nbsp;**i)** $f_{2,9}^{tree,*} \leq u$ and
-&nbsp;&nbsp;**ii)** $f_{2,9}^{K}(w) > u$.
+  **i)** $f_{2,9}^{tree,*} \leq u$ and
+  **ii)** $f_{2,9}^{K}(w) > u$.
 
 
 ---
 
 ## 6. Lemma: Proof shape
 
-**Box-tree covering for part i).** is a an additional certificate over the **S** leaves of the Theorem's certificate.
+**Box-tree covering for part i).** an additional certificate over the **S** leaves of the Theorem's certificate.
   The **P** leaves are already guaranteed to be upper-bounded in value by $b < u$, where **u = max_S sup f_{2,9}^tree**,
   formed outward at every step.
 
-**Witness point for part ii).** evaluation of $f_{2,9}^{K}(v)$ in interval arithmetic and comparison of outward-rounded
-  lower bound to $u$.
+**Witness point for part ii).** evaluation of $f_{2,9}^{K}(v)$ in interval arithmetic and comparison of outward-rounded lower bound to $u$.
 
 
 ---
 
-## 7. Lemma: Verification record and reproduction
-
-| leg | engine | result |
-|---|---|---|
-| Certifier `certify_lemma.py` | arb, 96 bits | 3,237,923 boxes, 418 s, deterministic single-core |
-| Checker `check_lemma.py` | mpmath.iv, second interval library, no FLINT | **PASS**, full unsampled pass, all 1,618,962 leaves, 7,082.6 s |
-
-
-Pinning down tree-optimal angles exactly (or proving a given tuple optimal) is
-impractical, so this instead certifies $f_{2,9}^{K} > f_{2,9}^{\text{tree},*}$
-**without ever locating them**: derive a rigorous upper bound $U \ge
-f_{2,9}^{\text{tree},*}$, then exhibit one point where $f_{2,9}^{K}$ is
-certified above $U$.
-
-$U$ is obtained for free from the existing certificate: every **P** leaf
-already proves $f_{2,9}^{\text{tree}} < b$ there (§3), so re-walking
-`certificate.jsonl.gz` and recomputing the same centred-form bound only on
-its 13,024 **S** leaves gives
-
-$$U = \max(b, \max_{S} \text{bound}) = \textbf{0.6391276594250365}
-\;(\texttt{0x1.473bbd96662c7p-1})$$
-
-— no new covering search needed. A witness point $w = (\beta_{1}, \gamma_{1},
-\beta_{2}, \gamma_{2})$ (found by ordinary unconstrained float64 optimization
-of $f_{2,9}^{K}$, outside the rigor chain), exact binary64 hex:
-
-```
-0x1.0189541bf092fp-1, 0x1.752b5bc9d2407p+1, -0x1.e0c856d2ed88ap-2, 0x1.6f478b15e56c7p+1
-```
-
-is then certified via a tight arb ball: $f_{2,9}^{K}(w) \geq$
-**0.7928749825019717** $> U$, margin **0.1537**.
-
-Verified in both engines (arb/flint producer, mpmath.iv checker), agreeing
-to the last reported digit:
+## 7. Lemma: Reproduction
 
 ```
 python3 certify_lemma.py certificate.jsonl.gz   # ~3 s
