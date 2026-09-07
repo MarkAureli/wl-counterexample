@@ -16,33 +16,18 @@ above Theorem certificate.
 
 ---
 
-## 1. Reader's map
-
-| section | content |
-|---|---|
-| §2 | Theorem |
-| §3 | Theorem: Proof shape |
-| §4 | Theorem: Verification record and reproduction |
-| §5 | Lemma |
-| §6 | Lemma: Proof shape |
-| §7 | Lemma: Reproduction |
-| §8 | File manifest |
-
-
----
-
-## 2. Theorem (= article Theorem `theorem:Counterexample`)
+## 1. Theorem (= `theorem:Counterexample`)
 
 Let **b := `0x1.473bb99c3c5eap-1` = 0.6391275408952286** and
-**c := `0x1.7ed9af28483cfp-9` = 0.002920916205895164**. Then
-  **i)** $b \leq f_{2,9}^{\text{tree},*}$ and
+**c := `0x1.7ed9af28483cfp-9` = 0.002920916205895164**. Then  
+  **i)** $b \leq f_{2,9}^{\text{tree},*}$ and  
   **ii)** for every $(\beta, \gamma) \in \mathbb{R}^{4}$
 with $f_{2,9}^{\text{tree}}(\beta, \gamma) \geq b$ it is $f_{2,9}^{K}(\beta, \gamma) − f_{2,9}^{\text{tree}}(\beta, \gamma) \leq −c$.
 
 
 ---
 
-## 3. Theorem: Proof shape
+## 2. Theorem: Proof shape
 
 **Provenance of b.** b is the outward-rounded lower endpoint of an arb point enclosure of
 $f_{2,9}^{\text{tree},*}$ at the witness angles below and verified by the certifier.
@@ -66,7 +51,7 @@ with **c = −max_S sup δ**, formed outward at every step. 1,618,961 internal n
 
 ---
 
-## 4. Theorem: Verification record and reproduction
+## 3. Theorem: Verification record and reproduction
 
 | leg | engine | result |
 |---|---|---|
@@ -82,29 +67,28 @@ python3 check_theorem.py certificate.jsonl.gz   # ~2 h, heartbeat every 250k rec
 
 ---
 
-## 5. Lemma (= article Lemma `lemma:NoCounterexample`)
+## 4. Lemma (= `lemma:NoCounterexample`)
 
 Let **u := `0x1.473bbd96662c7p-1` = 0.6391276594250365**, $w = (\beta_{1}, \gamma_{1}, \beta_{2}, \gamma_{2})$ with
 **beta1 := `0x1.0189541bf092fp-1` = 0.5030008586984759**, **gamma1 := `0x1.752b5bc9d2407p+1` = 2.9153856978850885**,
-**beta2 := `-0x1.e0c856d2ed88ap-2` = -0.46951423323060537**, and **gamma2 := `0x1.6f478b15e56c7p+1` = 2.8693708283343287**.  Then
-  **i)** $f_{2,9}^{tree,*} \leq u$ and
+**beta2 := `-0x1.e0c856d2ed88ap-2` = -0.46951423323060537**, and **gamma2 := `0x1.6f478b15e56c7p+1` = 2.8693708283343287**. Then  
+  **i)** $f_{2,9}^{\text{tree},*} \leq u$ and  
   **ii)** $f_{2,9}^{K}(w) > u$.
 
 
 ---
 
-## 6. Lemma: Proof shape
+## 5. Lemma: Proof shape
 
 **Box-tree covering for part i).** an additional certificate over the **S** leaves of the Theorem's certificate.
-  The **P** leaves are already guaranteed to be upper-bounded in value by $b < u$, where **u = max_S sup f_{2,9}^tree**,
-  formed outward at every step.
+  The **P** leaves are already guaranteed to be upper-bounded in value by $b < u$, where **u = max_S sup f_{2,9}^tree**, formed outward at every step.
 
 **Witness point for part ii).** evaluation of $f_{2,9}^{K}(v)$ in interval arithmetic and comparison of outward-rounded lower bound to $u$.
 
 
 ---
 
-## 7. Lemma: Reproduction
+## 6. Lemma: Reproduction
 
 ```
 python3 certify_lemma.py certificate.jsonl.gz   # ~3 s
@@ -113,7 +97,7 @@ python3 check_lemma.py certificate.jsonl.gz witness_result.json   # ~40 s
 
 ---
 
-## 8. File manifest
+## 7. File manifest
 
 **Producer and its inputs**
 
