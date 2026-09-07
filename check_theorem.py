@@ -9,7 +9,7 @@ Certificate is gzipped text: line 1 a JSON header, then a preorder walk of
 the box tree, one record per line:
 
     N <k>        internal node, split coordinate k, low subtree then high
-    P n | P c    prune leaf: sup f_2(box) < b
+    P n | P c    prune leaf: sup f_{2,9}^tree(box) < b
     S <hex>      safe leaf: sup [f_{2,9}^K - f_{2,9}^tree](box) < 0
 
 The file names split coordinates only; every box is reconstructed here from
@@ -33,10 +33,8 @@ the header domain by exact float-midpoint bisection. Checks performed:
      header (witness_hex/b_hex): cross-engine agreement between mpmath.iv
      value and the arb/flint value from certifier's verify_b.
 
-Usage
------
-    python3 check.py <cert.jsonl.gz>
-Exit status 0 iff every check passes (full run: every P and S leaf).
+Usage:
+    python3 check_theorem.py <cert.jsonl.gz>
 """
 # pyright: reportArgumentType=false, reportOperatorIssue=false
 # pyright: reportOptionalMemberAccess=false, reportOptionalSubscript=false

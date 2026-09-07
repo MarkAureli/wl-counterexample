@@ -30,7 +30,7 @@ Rigour model
 * sup/inf extracted via fup/flo (outward-rounded)
 
 Usage:
-  python3 certify.py
+  python3 certify_theorem.py
 """
 
 import gzip
